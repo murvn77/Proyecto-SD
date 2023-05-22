@@ -1,8 +1,9 @@
 package puj.sd.biblioteca;
 
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.net.MalformedURLException;
-import java.rmi.Naming;
 import java.rmi.NotBoundException;
 import java.rmi.RemoteException;
 import java.time.LocalDate;
@@ -10,62 +11,81 @@ import java.time.format.DateTimeFormatter;
 import java.util.InputMismatchException;
 import java.util.Scanner;
 
+import org.zeromq.SocketType;
+import org.zeromq.ZContext;
+import org.zeromq.ZMQ;
+
 public class BibliotecaClient implements Serializable {
     static Scanner sn = new Scanner(System.in);
 
-    public static void main(String[] args) throws RemoteException, MalformedURLException, NotBoundException, InterruptedException {
-        if (args.length != 1) {
-            System.out.println("Faltan parámetros en la invocación.");
-            System.out.println(
-                    "FORMA: NombrePrograma direccionServer:puerto: BibliotecaClient 10.43.101.172:1099");
-        } else {
-            System.out.println("========= BIENVENIDO =========");
-            menu(args[0]);
-        }
-    }
-            
-    public static void menu(String direccion) throws RemoteException, MalformedURLException, NotBoundException, InterruptedException {
-        Biblioteca mibiblioteca = (Biblioteca) Naming.lookup("rmi://" + direccion + "/" + "MiBiblioteca");
+    public static void main(String[] args)
+            throws RemoteException, MalformedURLException, NotBoundException, InterruptedException {
         String mensaje = "";
         boolean salir = false;
         char opcion;
+        ZMQ.Socket socket;
 
-        while (!salir) {
-            System.out.println("P. Prestamo");
-            System.out.println("D. Devolución");
-            System.out.println("R. Renovación");
-            System.out.println("S. Salir");
-            try {
+        try (ZContext context = new ZContext()) {
+            System.out.println("Conectando al servidor");
+            socket = context.createSocket(SocketType.REQ);
+            socket.connect("tcp://localhost:5555");
 
-                System.out.println("Escribe una de las opciones");
-                opcion = sn.next().charAt(0);
+            while (!salir) {
+                System.out.println("P. Prestamo");
+                System.out.println("D. Devolución");
+                System.out.println("R. Renovación");
+                System.out.println("S. Salir");
+                try {
+                    System.out.println("Escribe una de las opciones");
+                    opcion = sn.next().charAt(0);
 
-                switch (opcion) {
-                    case 'P':
-                        Actividad prestamo = saveLoanInformation();
-                        mensaje = mibiblioteca.sendMessage(prestamo);
-                        printRequestInformation(prestamo, mensaje);
-                        break;
-                    case 'D':
-                        Actividad devolucion = saveReturnInformation();
-                        mensaje = mibiblioteca.sendMessage(devolucion);
-                        printRequestInformation(devolucion, mensaje);
-                        break;
-                    case 'R':
-                        Actividad renovacion = saveRenewalInformation();
-                        // mensaje = mibiblioteca.renovacion(renovacion);
-                        printRequestInformation(renovacion, mensaje);
-                        break;
-                    case 'S':
-                        System.out.println("Gracias por visitar nuestro sistema. Te esperamos pronto.");
-                        break; 
-                    default:
-                        System.out.println("Sólo son permitidas las letras: P, D, R");
+                    switch (opcion) {
+                        case 'P':
+                            Actividad prestamo = saveLoanInformation();
+                            System.out.println("Conectando al servidor");
+                            byte[] prestamoSe = serializeObject(prestamo);
+                            socket.send(prestamoSe, 0);
+                            socket.recv(0);
+
+                            printRequestInformation(prestamo, mensaje);
+                            break;
+                        case 'D':
+                            Actividad devolucion = saveReturnInformation();
+                            System.out.println("Conectando al servidor");
+                            byte[] devolucionSe = serializeObject(devolucion);
+                            socket.send(devolucionSe, 0);
+                            socket.recv(0);
+
+                            printRequestInformation(devolucion, mensaje);
+                            break;
+                        case 'R':
+                            Actividad renovacion = saveRenewalInformation();
+                            printRequestInformation(renovacion, mensaje);
+                            break;
+                        case 'S':
+                            System.out.println("Gracias por visitar nuestro sistema. Te esperamos pronto.");
+                            break;
+                        default:
+                            System.out.println("Sólo son permitidas las letras: P, D, R");
+                    }
+                } catch (InputMismatchException e) {
+                    System.out.println("Debes insertar un número");
+                    sn.next();
                 }
-            } catch (InputMismatchException e) {
-                System.out.println("Debes insertar un número");
-                sn.next();
             }
+        }
+    }
+
+    public static byte[] serializeObject(Actividad newActividad) {
+        try {
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            ObjectOutputStream oos = new ObjectOutputStream(bos);
+            oos.writeObject(newActividad);
+            oos.close();
+            return bos.toByteArray();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return new byte[0];
         }
     }
 
@@ -75,7 +95,7 @@ public class BibliotecaClient implements Serializable {
         System.out.println("Digite la fecha límite: ");
         String fechaFinUser = sn.next();
         DateTimeFormatter formato = DateTimeFormatter.ofPattern("dd/MM/yyyy");
-        
+
         LocalDate fechaFin = LocalDate.parse(fechaFinUser, formato);
 
         System.out.println("Digite la cedula del cliente: ");
@@ -87,10 +107,8 @@ public class BibliotecaClient implements Serializable {
         System.out.println("Digite el codigo del libro: ");
         String codigoLibro = sn.next();
 
-        Actividad newPrestamo = new Actividad(TipoActividad.PRESTAMO, fechaInicio, fechaFin, cedulaCliente,
+        return new Actividad(TipoActividad.PRESTAMO, fechaInicio, fechaFin, cedulaCliente,
                 nombreCliente, codigoLibro, EstadoPrestamo.PRESTADO);
-
-        return newPrestamo;
     }
 
     public static Actividad saveReturnInformation() {
@@ -105,14 +123,13 @@ public class BibliotecaClient implements Serializable {
 
         LocalDate fechaDevolucion = LocalDate.now();
 
-        Actividad newDevolucion = new Actividad(TipoActividad.DEVOLUCION, fechaDevolucion, cedulaCliente, nombreCliente, codigoLibro, false);
+        return new Actividad(TipoActividad.DEVOLUCION, fechaDevolucion, cedulaCliente, nombreCliente, codigoLibro,
+                false);
 
-        return newDevolucion;
     }
 
     public static Actividad saveRenewalInformation() {
-        Actividad newRenovacion = new Actividad();
-        return newRenovacion;
+        return new Actividad();
     }
 
     public static void printRequestInformation(Actividad actividad, String mensaje) {
