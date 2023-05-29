@@ -20,13 +20,16 @@ Este es un programa que se encargará de supervisar que proceso de "Gestor Bibli
 ***El orden de la ejecución de los tres items anteriores no afecta***
 
 ### 4. Gestor Biblioteca
+Se encargará de gestionar las solucitudes del cliente y enviarlas a un actor correspondiente.
 
+### 5. Cliente Biblioteca
+Será quién hará las peticiones al gestor
 
 # Recomendaciones
 
 Se recomienda poner a correr las aplicaciones en el siguiente orden:
-1. Suscriptor Devolución
-2. Suscriptor Renovación
-3. Actividad Préstamo
+1. Suscriptor Devolución y Suscriptor Renovación
+2. Actividad Préstamo
+3. Supervisor Server
 4. Gestor Biblioteca
 5. Cliente Biblioteca
